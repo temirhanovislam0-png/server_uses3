@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>User Management (JWT)</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        body { background-color: #f0f2f5; display: flex; justify-content: center; padding: 40px 20px; min-height: 100vh; }
+        .container { width: 100%; max-width: 900px; }
+        .card { background: white; padding: 30px; border-radius: 10px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); margin-bottom: 20px; }
+        h2 { margin-bottom: 20px; color: #333; text-align: center; }
+        input { width: 100%; padding: 12px; margin-bottom: 15px; border: 1px solid #ccc; border-radius: 6px; font-size: 16px; outline: none; }
+        input:focus { border-color: #007bff; }
+        button { padding: 12px; background-color: #007bff; color: white; border: none; border-radius: 6px; font-size: 16px; cursor: pointer; transition: background 0.3s; }
+        button:hover { background-color: #0056b3; }
+        .full-width { width: 100%; }
+        
+        .header-actions { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; gap: 10px; flex-wrap: wrap; }
+        .search-box { flex: 1; min-width: 250px; }
+        .search-box input { margin-bottom: 0; }
+        .logout-btn { background-color: #dc3545; width: auto; }
+        .logout-btn:hover { background-color: #c82333; }
+
+        .toggle-text { text-align: center; margin-top: 15px; color: #666; }
+        .toggle-text a { color: #007bff; text-decoration: none; }
+        .error-msg { color: #dc3545; text-align: center; margin-top: 10px; font-size: 14px; }
+
+        .users-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 15px; }
+        .user-card { background: #f8f9fa; border: 1px solid #e9ecef; padding: 15px; border-radius: 8px; text-align: center; display: flex; flex-direction: column; align-items: center; }
+        .user-card img { width: 80px; height: 80px; border-radius: 50%; object-fit: cover; margin-bottom: 10px; border: 2px solid #007bff; background: #ddd; }
+        .user-card h3 { font-size: 18px; margin-bottom: 5px; color: #333; }
+        .user-card p { font-size: 14px; color: #666; margin-bottom: 3px; }
+        
+        .card-actions { display: flex; gap: 10px; margin-top: 15px; width: 100%; }
+        .card-actions button { flex: 1; padding: 8px; font-size: 14px; }
+        .btn-edit { background-color: #ffc107; color: #000; }
+        .btn-edit:hover { background-color: #e0a800; }
+        .btn-delete { background-color: #dc3545; }
+        .btn-delete:hover { background-color: #c82333; }
+
+        .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); justify-content: center; align-items: center; z-index: 1000; }
+        .modal.active { display: flex; }
+        .modal-content { background: white; padding: 30px; border-radius: 10px; width: 100%; max-width: 400px; }
+        .modal-content h3 { margin-bottom: 20px; text-align: center; }
+        .modal-actions { display: flex; gap: 10px; margin-top: 10px; }
+        .modal-actions button { flex: 1; }
+        .btn-cancel { background-color: #6c757d; }
+        .btn-cancel:hover { background-color: #5a6268; }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <div id="auth-section" class="card">
+            <h2 id="auth-title">Вход</h2>
+            <div id="register-fields" style="display: none;">
+                <input type="text" id="name" placeholder="Имя">
+                <input type="text" id="lastName" placeholder="Фамилия">
+                <input type="number" id="age" placeholder="Возраст">
+                <label style="display:block; margin-bottom:5px; color:#666; font-size:14px;">Аватар (необязательно):</label>
+                <input type="file" id="avatar" accept="image/*">
+            </div>
+            <input type="email" id="email" placeholder="Email">
+            <input type="password" id="password" placeholder="Пароль">
+            <button id="auth-btn" class="full-width" onclick="handleAuth()">Войти</button>
+            <p class="toggle-text">
+                <span id="toggle-msg">Нет аккаунта?</span> 
+                <a href="#" onclick="toggleAuthMode(event)" id="toggle-link">Зарегистрироваться</a>
+            </p>
+            <p id="error-msg" class="error-msg"></p>
+        </div>
+
+        <div id="users-section" class="card" style="display: none;">
+            <h2>Пользователи</h2>
+            <div class="header-actions">
+                <div class="search-box">
+                    <input type="text" id="search-input" placeholder="Поиск по имени или фамилии..." oninput="filterUsers()">
+                </div>
+                <button class="logout-btn" onclick="logout()">Выйти</button>
+            </div>
+            <div id="users-list" class="users-grid"></div>
+        </div>
+    </div>
+
+    <div id="edit-modal" class="modal">
+        <div class="modal-content">
+            <h3>Редактировать пользователя</h3>
+            <input type="hidden" id="edit-id">
+            <input type="text" id="edit-name" placeholder="Имя">
+            <input type="text" id="edit-lastName" placeholder="Фамилия">
+            <input type="number" id="edit-age" placeholder="Возраст">
+            <div class="modal-actions">
+                <button class="btn-cancel" onclick="closeModal()">Отмена</button>
+                <button onclick="saveUser()">Сохранить</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_URL = 'http://localhost:5000';
+        let isLoginMode = true;
+        let allUsers = [];
+        const defaultAvatar = 'https://cdn-icons-png.flaticon.com/512/149/149071.png';
+
+        // Получаем токен из хранилища
+        function getToken() {
+            return localStorage.getItem('token');
+        }
+
+        // --- АВТОРИЗАЦИЯ ---
+        function toggleAuthMode(e) {
+            if (e) e.preventDefault();
+            isLoginMode = !isLoginMode;
+            document.getElementById('auth-title').innerText = isLoginMode ? 'Вход' : 'Регистрация';
+            document.getElementById('auth-btn').innerText = isLoginMode ? 'Войти' : 'Зарегистрироваться';
+            document.getElementById('toggle-msg').innerText = isLoginMode ? 'Нет аккаунта?' : 'Уже есть аккаунт?';
+            document.getElementById('toggle-link').innerText = isLoginMode ? 'Зарегистрироваться' : 'Войти';
+            document.getElementById('register-fields').style.display = isLoginMode ? 'none' : 'block';
+            document.getElementById('error-msg').innerText = '';
+        }
+
+        async function handleAuth() {
+            const email = document.getElementById('email').value.trim();
+            const password = document.getElementById('password').value;
+            const errorMsg = document.getElementById('error-msg');
+            errorMsg.innerText = '';
+
+            if (!email || !password) {
+                errorMsg.innerText = 'Заполните email и пароль';
+                return;
+            }
+
+            try {
+                if (isLoginMode) {
+                    const response = await fetch(`${API_URL}/login`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ email, password })
+                    });
+                    const data = await response.json();
+                    
+                    if (response.ok) {
+                        // Бэкенд теперь возвращает { token, user }
+                        localStorage.setItem('token', data.token);
+                        localStorage.setItem('user', JSON.stringify(data.user));
+                        showUsersSection();
+                        loadUsers();
+                    } else {
+                        errorMsg.innerText = data.message || data || 'Ошибка входа';
+                    }
+                } else {
+                    const formData = new FormData();
+                    formData.append('name', document.getElementById('name').value.trim());
+                    formData.append('lastName', document.getElementById('lastName').value.trim());
+                    formData.append('age', document.getElementById('age').value);
+                    formData.append('email', email);
+                    formData.append('password', password);
+                    const avatarFile = document.getElementById('avatar').files[0];
+                    if (avatarFile) formData.append('avatar', avatarFile);
+
+                    const response = await fetch(`${API_URL}/registration`, { method: 'POST', body: formData });
+                    const data = await response.json();
+                    
+                    if (response.ok) {
+                        alert('Регистрация успешна! Теперь войдите.');
+                        toggleAuthMode();
+                    } else {
+                        errorMsg.innerText = data.message || data || 'Ошибка регистрации';
+                    }
+                }
+            } catch (err) {
+                errorMsg.innerText = 'Ошибка соединения с сервером';
+            }
+        }
+
+        // --- РАБОТА С ПОЛЬЗОВАТЕЛЯМИ ---
+        async function loadUsers() {
+            try {
+                const token = getToken();
+                const response = await fetch(`${API_URL}/users`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}` // Отправляем токен!
+                    }
+                });
+
+                // Если токен истек или невалиден
+                if (response.status === 401) {
+                    alert('Сессия истекла. Войдите заново.');
+                    logout();
+                    return;
+                }
+
+                allUsers = await response.json();
+                renderUsers(allUsers);
+            } catch (err) {
+                console.error('Ошибка загрузки пользователей:', err);
+            }
+        }
+
+        function renderUsers(users) {
+            const usersList = document.getElementById('users-list');
+            usersList.innerHTML = '';
+
+            if (users.length === 0) {
+                usersList.innerHTML = '<p style="text-align:center; width:100%; grid-column: 1/-1;">Пользователи не найдены</p>';
+                return;
+            }
+
+            users.forEach(user => {
+                const avatarUrl = user.avatar 
+                    ? `${API_URL}/${user.avatar.replace(/^\.\//, '')}` 
+                    : defaultAvatar;
+
+                const userCard = document.createElement('div');
+                userCard.className = 'user-card';
+
+                const img = document.createElement('img');
+                img.src = avatarUrl;
+                img.onerror = function() { this.src = defaultAvatar; };
+
+                const h3 = document.createElement('h3');
+                h3.innerText = `${user.name} ${user.lastName}`;
+
+                const pAge = document.createElement('p');
+                pAge.innerText = `Возраст: ${user.age}`;
+
+                const pEmail = document.createElement('p');
+                pEmail.innerText = user.email;
+
+                const actionsDiv = document.createElement('div');
+                actionsDiv.className = 'card-actions';
+
+                const btnEdit = document.createElement('button');
+                btnEdit.className = 'btn-edit';
+                btnEdit.innerText = 'Ред.';
+                btnEdit.onclick = () => openModal(user);
+
+                const btnDelete = document.createElement('button');
+                btnDelete.className = 'btn-delete';
+                btnDelete.innerText = 'Удалить';
+                btnDelete.onclick = () => deleteUser(user._id);
+
+                actionsDiv.appendChild(btnEdit);
+                actionsDiv.appendChild(btnDelete);
+
+                userCard.appendChild(img);
+                userCard.appendChild(h3);
+                userCard.appendChild(pAge);
+                userCard.appendChild(pEmail);
+                userCard.appendChild(actionsDiv);
+
+                usersList.appendChild(userCard);
+            });
+        }
+
+        function filterUsers() {
+            const query = document.getElementById('search-input').value.toLowerCase().trim();
+            if (!query) {
+                renderUsers(allUsers);
+                return;
+            }
+            
+            const filtered = allUsers.filter(user => 
+                user.name.toLowerCase().includes(query) || 
+                user.lastName.toLowerCase().includes(query)
+            );
+            renderUsers(filtered);
+        }
+
+        // --- УДАЛЕНИЕ ---
+        async function deleteUser(id) {
+            if (!confirm('Вы уверены, что хотите удалить этого пользователя?')) return;
+
+            try {
+                const response = await fetch(`${API_URL}/user/${id}`, {
+                    method: 'DELETE',
+                    headers: {
+                        'Authorization': `Bearer ${getToken()}`
+                    }
+                });
+                
+                if (response.ok) {
+                    loadUsers();
+                } else {
+                    alert('Ошибка при удалении');
+                }
+            } catch (err) {
+                alert('Ошибка соединения с сервером');
+            }
+        }
+
+        // --- РЕДАКТИРОВАНИЕ ---
+        function openModal(user) {
+            document.getElementById('edit-id').value = user._id;
+            document.getElementById('edit-name').value = user.name;
+            document.getElementById('edit-lastName').value = user.lastName;
+            document.getElementById('edit-age').value = user.age;
+            document.getElementById('edit-modal').classList.add('active');
+        }
+
+        function closeModal() {
+            document.getElementById('edit-modal').classList.remove('active');
+        }
+
+        async function saveUser() {
+            const id = document.getElementById('edit-id').value;
+            const name = document.getElementById('edit-name').value.trim();
+            const lastName = document.getElementById('edit-lastName').value.trim();
+            const age = document.getElementById('edit-age').value;
+
+            if (!name || !lastName || !age) {
+                alert('Заполните все поля');
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_URL}/user/${id}`, {
+                    method: 'PATCH',
+                    headers: { 
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${getToken()}` // Токен и сюда
+                    },
+                    body: JSON.stringify({ name, lastName, age })
+                });
+
+                if (response.ok) {
+                    closeModal();
+                    loadUsers();
+                } else {
+                    alert('Ошибка при обновлении');
+                }
+            } catch (err) {
+                alert('Ошибка соединения с сервером');
+            }
+        }
+
+        // --- ОБЩЕЕ ---
+        function showUsersSection() {
+            document.getElementById('auth-section').style.display = 'none';
+            document.getElementById('users-section').style.display = 'block';
+        }
+
+        function logout() {
+            localStorage.removeItem('token');
+            localStorage.removeItem('user');
+            document.getElementById('auth-section').style.display = 'block';
+            document.getElementById('users-section').style.display = 'none';
+            document.getElementById('email').value = '';
+            document.getElementById('password').value = '';
+            allUsers = [];
+            document.getElementById('users-list').innerHTML = '';
+        }
+
+        window.onload = () => {
+            if (getToken()) {
+                showUsersSection();
+                loadUsers();
+            }
+        };
+    </script>
+</body>
+</html>
